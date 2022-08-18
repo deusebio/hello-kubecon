@@ -14,10 +14,10 @@ develop a new k8s charm using the Operator Framework:
 
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus
+from ops.model import ActiveStatus, MaintenanceStatus
 
 from charms.logging.v0.classes import WithLogging
-
+from time import sleep
 
 class HelloKubeconCharm(CharmBase, WithLogging):
     """Charm the service."""
@@ -30,6 +30,9 @@ class HelloKubeconCharm(CharmBase, WithLogging):
     def _on_config_changed(self, event):
         name = self.config["name"]
         self.logger.info(f"The provided config is: {name}")
+        self.unit.status = MaintenanceStatus(f"Updating the configuration")
+        sleep(5)
+        self.logger.info(f"Configuration updated!")
         pass
 
     def _on_gosherve_pebble_ready(self, event):
