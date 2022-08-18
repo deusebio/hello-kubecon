@@ -54,6 +54,7 @@ class HelloKubeconCharm(CharmBase):
         container.autostart()
         # Learn more about statuses in the SDK docs:
         # https://juju.is/docs/sdk/constructs#heading--statuses
+        logger.info("The Pebble Connection has been made - Enrico")
         self.unit.status = ActiveStatus()
 
 
