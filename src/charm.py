@@ -12,18 +12,18 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
-import logging
 import urllib
 
+from charms.logging.v0.classes import WithLogging
 from charms.nginx_ingress_integrator.v0.ingress import IngressRequires
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
 
-logger = logging.getLogger(__name__)
+class IntegratedLoggingCharmBase(CharmBase, WithLogging):
+    pass
 
-
-class HelloKubeconCharm(CharmBase):
+class HelloKubeconCharm(IntegratedLoggingCharmBase):
     """Charm the service."""
 
     def __init__(self, *args):
@@ -67,10 +67,10 @@ class HelloKubeconCharm(CharmBase):
             if services != layer["services"]:
                 # Changes were made, add the new layer
                 container.add_layer("gosherve", layer, combine=True)
-                logging.info("Added updated layer 'gosherve' to Pebble plan")
+                self.logger.info("Added updated layer 'gosherve' to Pebble plan")
                 # Restart it and report a new status to Juju
                 container.restart("gosherve")
-                logging.info("Restarted gosherve service")
+                self.logger.info("Restarted gosherve service")
             # All is well, set an ActiveStatus
             self.unit.status = ActiveStatus()
         else:
@@ -103,7 +103,7 @@ class HelloKubeconCharm(CharmBase):
         site_src = "https://jnsgr.uk/demo-site"
         # Set some status and do some logging
         self.unit.status = MaintenanceStatus("Fetching web site")
-        logger.info("Downloading site from %s", site_src)
+        self.logger.info("Downloading site from %s", site_src)
         # Download the site
         urllib.request.urlretrieve(site_src, "/srv/index.html")
         # Set the unit status back to Active
