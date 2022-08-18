@@ -12,15 +12,19 @@ develop a new k8s charm using the Operator Framework:
     https://discourse.charmhub.io/t/4208
 """
 
-import logging
-
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus
+from ops.framework import _Metaclass
 from cgnal.core.logging.defaults import WithLogging
+from abc import ABCMeta
 
 
-class HelloKubeconCharm(CharmBase, WithLogging):
+class BaseMetaclass(_Metaclass, ABCMeta):
+    pass
+
+
+class HelloKubeconCharm(CharmBase, WithLogging, metaclass=BaseMetaclass):
     """Charm the service."""
 
     def __init__(self, *args):
