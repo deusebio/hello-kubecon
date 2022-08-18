@@ -17,11 +17,10 @@ import logging
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus
+from cgnal.core.logging.defaults import WithLogging
 
-logger = logging.getLogger(__name__)
 
-
-class HelloKubeconCharm(CharmBase):
+class HelloKubeconCharm(CharmBase, WithLogging):
     """Charm the service."""
 
     def __init__(self, *args):
@@ -54,7 +53,7 @@ class HelloKubeconCharm(CharmBase):
         container.autostart()
         # Learn more about statuses in the SDK docs:
         # https://juju.is/docs/sdk/constructs#heading--statuses
-        logger.info("The Pebble Connection has been made - Enrico")
+        self.logger.info("The Pebble Connection has been made - Enrico")
         self.unit.status = ActiveStatus()
 
 
