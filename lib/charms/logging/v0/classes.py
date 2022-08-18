@@ -1,12 +1,25 @@
 """Module for general logging functionalities and abstractions."""
 
 from logging import getLogger, Logger
-from typing import Callable, Union, Any
+from typing import Callable, Union, Any, Literal, TypedDict
 
-from cgnal.core.logging import (
-    LevelsDict,
-    StrLevelTypes,
-)
+LevelTypes = Literal[
+    "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET", 50, 40, 30, 20, 10, 0
+]
+StrLevelTypes = Literal["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET"]
+
+
+class LevelsDict(TypedDict):
+    CRITICAL: Literal[50]
+    ERROR: Literal[40]
+    WARNING: Literal[30]
+    INFO: Literal[20]
+    DEBUG: Literal[10]
+    NOTSET: Literal[0]
+
+
+DEFAULT_LOG_LEVEL: StrLevelTypes = "INFO"
+
 
 levels: LevelsDict = {
     "CRITICAL": 50,
