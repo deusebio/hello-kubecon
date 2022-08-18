@@ -16,7 +16,7 @@ from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus
 
-from lib.charms.logging.v0.classes import WithLogging
+from charms.logging.v0.classes import WithLogging
 
 
 class HelloKubeconCharm(CharmBase, WithLogging):
