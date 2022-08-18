@@ -32,6 +32,7 @@ class HelloKubeconCharm(CharmBase, WithLogging):
         self.logger.info(f"The provided config is: {name}")
         self.unit.status = MaintenanceStatus(f"Updating the configuration")
         sleep(5)
+        self.unit.status = ActiveStatus()
         self.logger.info(f"Configuration updated!")
         pass
 
