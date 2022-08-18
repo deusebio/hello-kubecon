@@ -25,6 +25,12 @@ class HelloKubeconCharm(CharmBase, WithLogging):
     def __init__(self, *args):
         super().__init__(*args)
         self.framework.observe(self.on.gosherve_pebble_ready, self._on_gosherve_pebble_ready)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+
+    def _on_config_changed(self, event):
+        name = self.config["name"]
+        self.logger.info(f"The provided config is: {name}")
+        pass
 
     def _on_gosherve_pebble_ready(self, event):
         """Define and start a workload using the Pebble API."""
