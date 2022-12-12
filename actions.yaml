@@ -5,3 +5,7 @@
 
 pull-site:
   description: Unpack latest version of website from remote source.
+  params:
+    url:
+      type: string
+      description: URL where to fetch information from.

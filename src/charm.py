@@ -13,45 +13,50 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import urllib
+from typing import Optional, Union
 
-from charms.logging.v0.classes import WithLogging
-from charms.nginx_ingress_integrator.v0.ingress import IngressRequires
-from ops.charm import CharmBase
+from ops.charm import ActionEvent, RelationEvent
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
+from pydantic import ValidationError
 
-class IntegratedLoggingCharmBase(CharmBase, WithLogging):
-    pass
+from charms.core.classes import TypeSafeCharmBase
+from charms.core.classes import validate_params
+from charms.core.relations import parse_relation_data
+from charms.logging.v0.classes import WithLogging, getLogger
+from charms.nginx_ingress_integrator.v0.ingress import IngressRequires, IngressRelationData
+from domain.config import HelloKubeconConfig, PullActionModel, PeerRelationModel, SubField
 
-class HelloKubeconCharm(IntegratedLoggingCharmBase):
+CLUSTER = "cluster"
+
+
+class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig], WithLogging):
     """Charm the service."""
+
+    config_type = HelloKubeconConfig
 
     def __init__(self, *args):
         super().__init__(*args)
+
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
-        self.framework.observe(self.on.pull_site_action, self._pull_site_action)
+        self.framework.observe(
+            self.on.pull_site_action, self._pull_site_action
+        )
+        self.framework.observe(self.on.cluster_relation_joined, self._on_cluster_relation_joined)
 
         self.ingress = IngressRequires(
             self,
-            {
-                "service-hostname": self._external_hostname,
-                "service-name": self.app.name,
-                "service-port": 8080,
-            },
+            IngressRelationData(**{
+                "service_hostname": self.config.external_hostname or self.app.name,
+                "service_name": self.app.name,
+                "service_port": 8080,
+            }),
         )
-
-    @property
-    def _external_hostname(self):
-        """Return the external hostname to be passed to ingress via the relation."""
-        # It is recommended to default to `self.app.name` so that the external
-        # hostname will correspond to the deployed application name in the
-        # model, but allow it to be set to something specific via config.
-        return self.config["external-hostname"] or self.app.name
 
     def _on_install(self, _):
         # Download the site
-        self._fetch_site()
+        self._fetch_site("https://jnsgr.uk/demo-site")
 
     def _on_config_changed(self, event):
         """Handle the config-changed event"""
@@ -76,7 +81,9 @@ class HelloKubeconCharm(IntegratedLoggingCharmBase):
         else:
             self.unit.status = WaitingStatus("waiting for Pebble in workload container")
 
-        self.ingress.update_config({"service-hostname": self._external_hostname})
+        self.logger.info(f"Show config: {str(self.config)}")
+
+        self.ingress.update_config({"service-hostname": self.config.external_hostname})
 
     def _gosherve_layer(self):
         """Returns a Pebble configration layer for Gosherve"""
@@ -90,17 +97,17 @@ class HelloKubeconCharm(IntegratedLoggingCharmBase):
                     "command": "/gosherve",
                     "startup": "enabled",
                     "environment": {
-                        "REDIRECT_MAP_URL": self.config["redirect-map"],
+                        "REDIRECT_MAP_URL": self.config.redirect_map,
                         "WEBROOT": "/srv",
                     },
                 }
             },
         }
 
-    def _fetch_site(self):
+    def _fetch_site(self, site_src: str):
         """Fetch latest copy of website from Github and move into webroot"""
         # Set the site URL
-        site_src = "https://jnsgr.uk/demo-site"
+        # site_src = "https://jnsgr.uk/demo-site"
         # Set some status and do some logging
         self.unit.status = MaintenanceStatus("Fetching web site")
         self.logger.info("Downloading site from %s", site_src)
@@ -109,11 +116,47 @@ class HelloKubeconCharm(IntegratedLoggingCharmBase):
         # Set the unit status back to Active
         self.unit.status = ActiveStatus()
 
-    def _pull_site_action(self, event):
+    @validate_params(PullActionModel)
+    def _pull_site_action(self, event: ActionEvent, params: Optional[Union[PullActionModel, ValidationError]] = None):
         """Action handler that pulls the latest site archive and unpacks it"""
-        self._fetch_site()
-        event.set_results({"result": "site pulled"})
+
+        if params is not None and not isinstance(params, ValidationError):
+            self.logger.info(f"My URL is: {params.url}")
+            self._fetch_site(params.url)
+            event.set_results({"result": "site pulled"})
+
+    @parse_relation_data(app_model=PeerRelationModel)
+    def _on_cluster_relation_joined(
+            self, event: RelationEvent,
+            app_data: Optional[Union[PeerRelationModel, ValidationError]] = None,
+            unit_data: Optional[Union[PeerRelationModel, ValidationError]] = None
+    ) -> None:
+        """Adds the peer unit in an awesome way
+        Args:
+            event: The triggering relation joined/changed event.
+        """
+
+        if isinstance(app_data, ValidationError):
+            self.logger.info(f"Could not parse app data because of {app_data}")
+
+        # only allow the leader to execute code
+        if not self.unit.is_leader():
+            self.logger.info("unit %s is not leader, returning...", self.unit.name)
+            self.logger.info(f"showing content: {app_data}")
+            if isinstance(app_data, PeerRelationModel):
+                self.logger.info(f"{type(app_data.complex_property)}")
+            return
+
+        if isinstance(app_data, ValidationError):
+            self.logger.info(f"Writing data to the databag")
+            PeerRelationModel(
+                my_key=42,
+                complex_property=[SubField(subkey="enrico")]
+            ).write(self.model.get_relation(CLUSTER).data[self.app])
+        else:
+            self.logger.info(f"The app data model is {app_data}")
 
 
 if __name__ == "__main__":
+    logger = getLogger("my-main")
     main(HelloKubeconCharm)
