@@ -50,12 +50,14 @@ doing so won't get the current relation changed event, because it wasn't
 registered to handle the event (because it wasn't created in `__init__` when
 the event was fired).
 """
-
 import logging
+from typing import Union, Dict, Optional
+from pydantic import ValidationError
 
-from ops.charm import CharmEvents
-from ops.framework import EventBase, EventSource, Object
-from ops.model import BlockedStatus
+from ops.charm import CharmEvents, RelationEvent
+from ops.framework import EventSource, Object
+
+from charms.core.relations import parse_relation_data, RelationDataModel
 
 # The unique Charmhub library identifier, never change it
 LIBID = "db0af4367506491c91663468fb5caa4c"
@@ -90,7 +92,24 @@ OPTIONAL_INGRESS_RELATION_FIELDS = {
 }
 
 
-class IngressAvailableEvent(EventBase):
+class IngressRelationData(RelationDataModel):
+    service_hostname: str
+    service_name: str
+    service_port: int
+    additional_hostnames: Optional[str] = None
+    limit_rps: Optional[str] = None
+    limit_whitelist: Optional[str] = None
+    max_body_size: Optional[str] = None
+    retry_errors: Optional[str] = None
+    rewrite_target: Optional[str] = None
+    rewrite_enabled: Optional[str] = None
+    service_namespace: Optional[str] = None
+    session_cookie_max_age: Optional[str] = None
+    tls_secret_name: Optional[str] = None
+    path_routes: Optional[str] = None
+
+
+class IngressAvailableEvent(RelationEvent):
     pass
 
 
@@ -107,58 +126,31 @@ class IngressRequires(Object):
         - relation-changed
     """
 
-    def __init__(self, charm, config_dict):
+    def __init__(self, charm, config_dict: Union[Dict, IngressRelationData]):
         super().__init__(charm, "ingress")
 
         self.framework.observe(charm.on["ingress"].relation_changed, self._on_relation_changed)
 
-        self.config_dict = config_dict
-
-    def _config_dict_errors(self, update_only=False):
-        """Check our config dict for errors."""
-        blocked_message = "Error in ingress relation, check `juju debug-log`"
-        unknown = [
-            x
-            for x in self.config_dict
-            if x not in REQUIRED_INGRESS_RELATION_FIELDS | OPTIONAL_INGRESS_RELATION_FIELDS
-        ]
-        if unknown:
-            logger.error(
-                "Ingress relation error, unknown key(s) in config dictionary found: %s",
-                ", ".join(unknown),
-            )
-            self.model.unit.status = BlockedStatus(blocked_message)
-            return True
-        if not update_only:
-            missing = [x for x in REQUIRED_INGRESS_RELATION_FIELDS if x not in self.config_dict]
-            if missing:
-                logger.error(
-                    "Ingress relation error, missing required key(s) in config dictionary: %s",
-                    ", ".join(missing),
-                )
-                self.model.unit.status = BlockedStatus(blocked_message)
-                return True
-        return False
+        self.config: IngressRelationData = config_dict if isinstance(config_dict, IngressRelationData) \
+            else IngressRelationData(**config_dict)
 
     def _on_relation_changed(self, event):
         """Handle the relation-changed event."""
         # `self.unit` isn't available here, so use `self.model.unit`.
         if self.model.unit.is_leader():
-            if self._config_dict_errors():
-                return
-            for key in self.config_dict:
-                event.relation.data[self.model.app][key] = str(self.config_dict[key])
+            self.config.write(event.relation.data[self.model.app])
 
-    def update_config(self, config_dict):
+    def update_config(self, config_dict: Union[Dict, IngressRelationData]):
         """Allow for updates to relation."""
         if self.model.unit.is_leader():
-            self.config_dict = config_dict
-            if self._config_dict_errors(update_only=True):
-                return
+
+            self.config = config_dict if isinstance(config_dict, IngressRelationData) \
+                else self.config.copy(update=config_dict)
+
             relation = self.model.get_relation("ingress")
+
             if relation:
-                for key in self.config_dict:
-                    relation.data[self.model.app][key] = str(self.config_dict[key])
+                self.config.write(relation.data[self.model.app])
 
 
 class IngressProvides(Object):
@@ -175,7 +167,10 @@ class IngressProvides(Object):
         self.framework.observe(charm.on["ingress"].relation_changed, self._on_relation_changed)
         self.charm = charm
 
-    def _on_relation_changed(self, event):
+    @parse_relation_data(app_model=IngressRelationData)
+    def _on_relation_changed(
+            self, event: RelationEvent, params: Optional[Union[IngressRelationData, ValidationError]] = None
+    ):
         """Handle a change to the ingress relation.
 
         Confirm we have the fields we expect to receive."""
@@ -183,29 +178,6 @@ class IngressProvides(Object):
         if not self.model.unit.is_leader():
             return
 
-        ingress_data = {
-            field: event.relation.data[event.app].get(field)
-            for field in REQUIRED_INGRESS_RELATION_FIELDS | OPTIONAL_INGRESS_RELATION_FIELDS
-        }
-
-        missing_fields = sorted(
-            [
-                field
-                for field in REQUIRED_INGRESS_RELATION_FIELDS
-                if ingress_data.get(field) is None
-            ]
-        )
-
-        if missing_fields:
-            logger.error(
-                "Missing required data fields for ingress relation: {}".format(
-                    ", ".join(missing_fields)
-                )
-            )
-            self.model.unit.status = BlockedStatus(
-                "Missing fields for ingress: {}".format(", ".join(missing_fields))
-            )
-
         # Create an event that our charm can use to decide it's okay to
         # configure the ingress.
-        self.charm.on.ingress_available.emit()
+        self.charm.on.ingress_available.emit(event.relation, app=event.app, unit=event.unit)
