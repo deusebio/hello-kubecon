@@ -1,7 +1,8 @@
 from typing import List
-from pydantic import BaseModel, root_validator, validator
 
-from charms.core.relations import RelationDataModel
+from pydantic import BaseModel, root_validator, validator, ConfigDict
+
+from charms.core.relations import BaseRelationData
 
 
 class HelloKubeconConfig(BaseModel):
@@ -33,7 +34,10 @@ class SubField(BaseModel):
     """Data model for a subfield of a complicated property in the relation databag."""
     subkey: str
 
-class PeerRelationModel(RelationDataModel):
+
+class PeerRelationModel(BaseRelationData):
     """Data model for the relation databag."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     my_key: float
     complex_property: List[SubField]

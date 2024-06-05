@@ -57,7 +57,7 @@ from pydantic import ValidationError
 from ops.charm import CharmEvents, RelationEvent
 from ops.framework import EventSource, Object
 
-from charms.core.relations import parse_relation_data, RelationDataModel
+from charms.core.relations import parse_relation_data, BaseRelationData
 
 # The unique Charmhub library identifier, never change it
 LIBID = "db0af4367506491c91663468fb5caa4c"
@@ -92,7 +92,7 @@ OPTIONAL_INGRESS_RELATION_FIELDS = {
 }
 
 
-class IngressRelationData(RelationDataModel):
+class IngressRelationData(BaseRelationData):
     service_hostname: str
     service_name: str
     service_port: int
@@ -134,11 +134,13 @@ class IngressRequires(Object):
         self.config: IngressRelationData = config_dict if isinstance(config_dict, IngressRelationData) \
             else IngressRelationData(**config_dict)
 
+        self.config.bind(self.model.get_relation("ingress").data[self.model.app])
+
     def _on_relation_changed(self, event):
         """Handle the relation-changed event."""
         # `self.unit` isn't available here, so use `self.model.unit`.
         if self.model.unit.is_leader():
-            self.config.write(event.relation.data[self.model.app])
+            self.config.bind(event.relation.data[self.model.app])
 
     def update_config(self, config_dict: Union[Dict, IngressRelationData]):
         """Allow for updates to relation."""

@@ -54,6 +54,7 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig], WithLogging):
             }),
         )
 
+
     def _on_install(self, _):
         # Download the site
         self._fetch_site("https://jnsgr.uk/demo-site")
@@ -145,6 +146,7 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig], WithLogging):
             self.logger.info(f"showing content: {app_data}")
             if isinstance(app_data, PeerRelationModel):
                 self.logger.info(f"{type(app_data.complex_property)}")
+
             return
 
         if isinstance(app_data, ValidationError):
@@ -152,7 +154,7 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig], WithLogging):
             PeerRelationModel(
                 my_key=42,
                 complex_property=[SubField(subkey="enrico")]
-            ).write(self.model.get_relation(CLUSTER).data[self.app])
+            ).bind(self.model.get_relation(CLUSTER).data[self.app])
         else:
             self.logger.info(f"The app data model is {app_data}")
 
