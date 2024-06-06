@@ -4,13 +4,17 @@ from typing import Literal, Optional
 from ops.model import Model, Relation
 from pydantic import ValidationError
 
+from charms.traefik_k8s.v1.ingress import (
+    ProviderApplicationData, ProviderIngressData
+)
 from domain.config import PeerRelationAppData
 
-CLUSTER = "cluster"
+MODE = Literal["w", "r"]
 
 logger = logging.getLogger(__name__)
 
-MODE = Literal["w", "r"]
+CLUSTER = "cluster"
+INGRESS = "ingress"
 
 
 class Context:
@@ -33,3 +37,19 @@ class Context:
                 return data
             except ValidationError as e:
                 logger.debug(f"Cluster relation validation failed: {e}")
+
+    @property
+    def ingress_relation(self) -> Optional[Relation]:
+        """The S3 relation."""
+        return self.model.get_relation(INGRESS)
+
+    @property
+    def ingress(self) -> Optional[ProviderIngressData]:
+        if relation := self.cluster_relation:
+            try:
+                return ProviderApplicationData.read(
+                    relation.data[relation.app]
+                ).ingress
+            except ValidationError as e:
+                logger.debug(f"Cluster relation validation failed: {e}")
+
