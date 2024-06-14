@@ -1,8 +1,9 @@
 import json
+import yaml
 from functools import wraps
-from typing import Optional, Type, Callable
+from typing import Optional, Type, Callable, Any, ClassVar
 from typing import TypeVar
-from typing import Union
+from typing import Union, Literal
 
 from ops.charm import CharmBase, RelationEvent
 from ops.model import RelationDataContent
@@ -10,8 +11,35 @@ from pydantic import BaseModel, ValidationError
 from typing_extensions import Self
 from pydantic.json import pydantic_encoder
 
+Backend = Literal["json", "yaml"]
+
+
 class BaseRelationData(BaseModel, validate_assignment=True):
+    _backend: ClassVar[Backend] = "json"
+
     _relation: Optional[RelationDataContent] = None
+
+    @classmethod
+    def set_backend(cls, backend: Backend):
+        cls._backend = backend
+
+    @classmethod
+    def _loads(cls):
+        if cls._backend is "json":
+            def func(raw):
+                return json.loads(raw)
+            return func
+        elif cls._backend is "yaml":
+            def func(raw):
+                return yaml.safe_load(raw)
+            return func
+
+    @classmethod
+    def _dumps(cls):
+        if cls._backend is "json":
+            return lambda obj: json.dumps(obj, default=pydantic_encoder)
+        elif cls._backend is "yaml":
+            return lambda obj: yaml.safe_dump(obj)
 
     @classmethod
     def serialize(cls, name, value):
@@ -22,9 +50,9 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         ):
             serialized_value = str(value)
         elif isinstance(value, BaseModel):
-            serialized_value = json.dumps(value.dict())
+            serialized_value = cls._dumps()(value.dict())
         elif isinstance(value, dict) or isinstance(value, list):
-            serialized_value = json.dumps(value, default=pydantic_encoder)
+            serialized_value = cls._dumps()(value)
         else:
             raise ValueError(f"Type of value {type(value)} not serializable")
 
@@ -63,7 +91,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
             obj: pydantic class represeting the model to be used for parsing
         """
         return cls(**{
-            field_name: json.loads(
+            field_name: cls._loads()(
                 relation_data[parsed_key]) if field.annotation not in (
                 str, int) else str(relation_data[parsed_key])
             for field_name, field in cls.__fields__.items()

@@ -164,7 +164,9 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
         if self.unit.is_leader():
             self.context.cluster.my_key = round(random.random()*100, 2)
 
-        logger.info(f"My ingress is: {self.context.ingress.url}")
+        if self.context.ingress:
+            logger.info(f"My ingress is: {self.context.ingress.url}")
+
 
 if __name__ == "__main__":
     main(HelloKubeconCharm)

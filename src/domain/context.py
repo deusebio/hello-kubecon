@@ -47,11 +47,12 @@ class Context:
 
     @property
     def ingress(self) -> Optional[ProviderIngressData]:
-        if relation := self.cluster_relation:
+        if relation := self.ingress_relation:
             try:
-                return ProviderApplicationData.read(
+                out = ProviderApplicationData.read(
                     relation.data[relation.app]
-                ).ingress
+                )
+                return out.ingress
             except ValidationError as e:
                 logger.debug(f"Cluster relation validation failed: {e}")
 
