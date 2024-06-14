@@ -9,8 +9,6 @@ from charms.traefik_k8s.v1.ingress import (
 )
 from domain.config import PeerRelationAppData
 
-MODE = Literal["w", "r"]
-
 logger = logging.getLogger(__name__)
 
 CLUSTER = "cluster"

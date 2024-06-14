@@ -137,7 +137,7 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
 
             PeerRelationAppData(
                 my_key=42,
-                complex_property=[SubField(subkey="enrico")]
+                complex_property=[SubField(subkey="subkey")]
             ).bind(event.relation.data[event.app])
 
     @parse_relation_data(app_model=PeerRelationAppData)
