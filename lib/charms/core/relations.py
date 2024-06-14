@@ -15,34 +15,90 @@ Backend = Literal["json", "yaml"]
 
 
 class BaseRelationData(BaseModel, validate_assignment=True):
+    """Base class to provide pydantic representation for Juju databag.
+
+    The class also takes care of serializing/deserializing the content into
+    the relation data, using either json or yaml serialization.
+
+    A databag can simply be defined with
+
+    ```
+    class Foo(BaseRelationData):
+        bar: int
+        baz: float
+    ```
+
+    Data parsing and validation from RelationDataContent can be done with
+
+    ```
+    foo = Foo.read(relation_data)
+    ```
+
+    Writing is done by binding a particular BaseRelationData object to some
+    relation_data
+
+    ```
+    foo.bind(relation_data)
+    ```
+
+    Once a binding with some RelationDataContent object is done, item assigment
+    takes care of validating and serializing the value into the databag. For
+    complex types (derived by pydantic BaseModel) on subfield, either json or
+    yaml representation is used, e.g.
+
+    ```
+    class Baz(BaseModel):
+        baz: int
+
+    class Bar(BaseModel):
+        bazs: List[Baz]
+
+    class Foo(BaseRelationData):
+        bar: Bar
+
+    foo = Foo(
+        bar = Bar(
+            bazs=[Baz(baz=1)]
+        )
+    ).bind(relation_data)
+
+    assert relation_data["bar"] == "{'bazs': [{'baz' : 1}]}"
+
+    # Error - the type is not correct
+    foo.bar = 1
+
+    # Success
+    foo.bar = Bar(bazs=[Bar(baz=2)])
+
+    assert relation_data["bar"] == "{'bazs': [{'baz' : 2}]}"
+    ```
+    """
+
     _backend: ClassVar[Backend] = "json"
 
     _relation: Optional[RelationDataContent] = None
 
     @classmethod
-    def set_backend(cls, backend: Backend):
-        cls._backend = backend
-
-    @classmethod
     def _loads(cls):
-        if cls._backend is "json":
+        if cls._backend == "json":
             def func(raw):
                 return json.loads(raw)
             return func
-        elif cls._backend is "yaml":
+        elif cls._backend == "yaml":
             def func(raw):
                 return yaml.safe_load(raw)
             return func
 
     @classmethod
     def _dumps(cls):
-        if cls._backend is "json":
+        if cls._backend == "json":
             return lambda obj: json.dumps(obj, default=pydantic_encoder)
-        elif cls._backend is "yaml":
+        elif cls._backend == "yaml":
             return lambda obj: yaml.safe_dump(obj)
 
     @classmethod
-    def serialize(cls, name, value):
+    def serialize(cls, name, value) -> tuple[str, str]:
+        """Serialize the key, value pair."""
         if (
                 isinstance(value, str) or
                 isinstance(value, int) or
@@ -70,6 +126,11 @@ class BaseRelationData(BaseModel, validate_assignment=True):
             self._relation[serialized_key] = serialized_value
 
     def bind(self, relation: RelationDataContent):
+        """Create a binding with a relation data.
+
+        When updating the pydantic attributes, the values will be serialized
+        to the relation data bag.
+        """
         self._relation = relation
         for name in self.__fields__.keys():
             parsed_value = getattr(self, name)
