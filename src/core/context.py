@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from charms.traefik_k8s.v1.ingress import (
     ProviderApplicationData, ProviderIngressData
 )
-from domain.config import PeerRelationAppData
+from core.domain import PeerRelationAppData
 
 logger = logging.getLogger(__name__)
 

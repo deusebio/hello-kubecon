@@ -1,11 +1,15 @@
 import json
+import logging
+
 import yaml
 from functools import wraps
-from typing import Optional, Type, Callable, Any, ClassVar
-from typing import TypeVar
-from typing import Union, Literal
+from typing import (
+    Optional, Type, Callable, ClassVar, TypeVar, Union, Literal, Tuple
+)
+from typing_extensions import Protocol
 
-from ops.charm import CharmBase, RelationEvent
+
+from ops.charm import CharmBase, RelationEvent, EventBase
 from ops.model import RelationDataContent
 from pydantic import BaseModel, ValidationError
 from typing_extensions import Self
@@ -97,7 +101,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
             return lambda obj: yaml.safe_dump(obj)
 
     @classmethod
-    def serialize(cls, name, value) -> tuple[str, str]:
+    def serialize(cls, name, value) -> Tuple[str, str]:
         """Serialize the key, value pair."""
         if (
                 isinstance(value, str) or
@@ -161,41 +165,39 @@ class BaseRelationData(BaseModel, validate_assignment=True):
 
 
 S = TypeVar("S")
-AppModel = TypeVar("AppModel", bound=BaseRelationData)
-UnitModel = TypeVar("UnitModel", bound=BaseRelationData)
+Model = TypeVar("Model", bound=BaseRelationData)
+
+ParsedModel = Union[Model, ValidationError]
 
 
-def parse_relation_data(app_model: Optional[Type[AppModel]] = None,
-                        unit_model: Optional[Type[UnitModel]] = None):
-    """Return a decorator to allow pydantic parsing of the app and unit databags.
+class HookWithData(Protocol):
+    def __call__(
+            self, charm: CharmBase, event: RelationEvent, *models: ParsedModel
+    ) -> None: ...
+
+
+def parse_relation_data(
+        get_data: Callable[[EventBase], RelationDataContent],
+        model: Type[Model]
+):
+    """Return a decorator to allow pydantic parsing of relation content.
 
     Args:
-        app_model: Pydantic class representing the model to be used for parsing the content of the app databag. None
-            if no parsing ought to be done.
-        unit_model: Pydantic class representing the model to be used for parsing the content of the unit databag. None
-            if no parsing ought to be done.
+        get_data: callable to retrieve the relation content.
+        model: Pydantic class representing the model to be used for parsing.
     """
 
-    def decorator(f: Callable[[
-        CharmBase, RelationEvent, Union[AppModel, ValidationError],
-        Union[UnitModel, ValidationError]
-    ], S]) -> Callable[[CharmBase, RelationEvent], S]:
-        @wraps(f)
-        def event_wrapper(self: CharmBase, event: RelationEvent):
+    def decorator(hook: HookWithData) -> HookWithData:
+        @wraps(hook)
+        def event_wrapper(self: CharmBase, event: RelationEvent, *others: ParsedModel):
 
             try:
-                app_data = app_model.read(event.relation.data[
-                                              event.app]) if app_model is not None else None
+                content = get_data(event)
+                data = model.read(content)
             except ValidationError as e:
-                app_data = e
+                data = e
 
-            try:
-                unit_data = unit_model.read(event.relation.data[
-                                                event.unit]) if unit_model is not None else None
-            except ValidationError as e:
-                unit_data = e
-
-            return f(self, event, app_data, unit_data)
+            return hook(self, event, *(others + (data,)))
 
         return event_wrapper
 

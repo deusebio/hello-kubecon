@@ -47,3 +47,7 @@ class PeerRelationAppData(BaseRelationData):
 
     my_key: float
     complex_property: List[SubField]
+
+
+class PeerUnitData(BaseRelationData):
+    ingress_address: str

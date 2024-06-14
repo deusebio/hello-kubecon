@@ -27,8 +27,10 @@ from pydantic import ValidationError
 from charms.core.classes import TypeSafeCharmBase
 from charms.core.classes import validate_params
 from charms.core.relations import parse_relation_data
-from domain.config import HelloKubeconConfig, PullActionModel, PeerRelationAppData, SubField
-from domain.context import Context
+from core.domain import (
+    HelloKubeconConfig, PullActionModel, PeerRelationAppData, SubField, PeerUnitData
+)
+from core.context import Context
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,8 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
         self.framework.observe(self.on.cluster_relation_created,
                                self._on_cluster_relation_created)
         self.framework.observe(self.on.cluster_relation_changed,
+                               self._on_cluster_relation_changed)
+        self.framework.observe(self.on.cluster_relation_joined,
                                self._on_cluster_relation_changed)
 
         self.ingress = IngressPerAppRequirer(
@@ -140,25 +144,40 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
                 complex_property=[SubField(subkey="subkey")]
             ).bind(event.relation.data[event.app])
 
-    @parse_relation_data(app_model=PeerRelationAppData)
+    @parse_relation_data(
+        get_data=lambda event: event.relation.data.get(event.app, {}),
+        model=PeerRelationAppData
+    )
+    @parse_relation_data(
+        get_data=lambda event: event.relation.data.get(event.unit, {}),
+        model=PeerUnitData
+    )
     def _on_cluster_relation_changed(
             self, event: RelationEvent,
-            app_data: Optional[
-                Union[PeerRelationAppData, ValidationError]] = None,
-            unit_data: Optional[
-                Union[PeerRelationAppData, ValidationError]] = None
+            app: Optional[
+                Union[PeerRelationAppData, ValidationError]
+            ] = None,
+            unit: Optional[
+                Union[PeerRelationAppData, ValidationError]
+            ] = None,
     ) -> None:
         """Adds the peer unit in an awesome way
         Args:
             event: The triggering relation joined/changed event.
         """
-        if isinstance(app_data, ValidationError):
-            logger.info(f"Could not parse app data because of {app_data}")
+        logger.info(f"Unit: {event.unit}")
 
-        if isinstance(unit_data, ValidationError):
-            logger.info(f"Could not parse unit data because of {unit_data}")
+        if isinstance(app, ValidationError):
+            logger.warning(f"Could not parse app data because of {app}")
+        else:
+            logger.info(f"The app data model is {app}")
 
-        logger.info(f"The app data model is {app_data}")
+        if isinstance(unit, ValidationError):
+            logger.warning(f"Could not parse unit data because of {unit}")
+        else:
+            logger.info(f"The unit data model is {unit}")
+
+
 
     def _update_status(self, _: RelationEvent):
         if self.unit.is_leader():
