@@ -40,7 +40,7 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
     def __init__(self, *args):
         super().__init__(*args)
 
-        self.context = Context(self.model)
+        self.context = Context(self.model, self.unit.is_leader())
 
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
@@ -161,10 +161,8 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
         logger.info(f"The app data model is {app_data}")
 
     def _update_status(self, _: RelationEvent):
-        if (self.unit.is_leader() and
-                (cluster_data := self.context.get_cluster_data(mode="w"))
-        ):
-            cluster_data.my_key = round(random.random()*100, 2)
+        if self.unit.is_leader():
+            self.context.cluster.my_key = round(random.random()*100, 2)
 
         logger.info(f"My ingress is: {self.context.ingress.url}")
 

@@ -476,7 +476,7 @@ class IngressPerAppRequirer(_IngressPerAppBase):
 
         app_data = ProviderApplicationData.read(relation.data[relation.app])
         # fetch the provider's app databag
-        return app_data.ingress.url
+        return app_data.ingres.url if app_data.ingress else None
 
     @property
     def url(self) -> Optional[str]:

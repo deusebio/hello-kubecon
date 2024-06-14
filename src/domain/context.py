@@ -19,20 +19,22 @@ INGRESS = "ingress"
 
 class Context:
 
-    def __init__(self, model: Model):
+    def __init__(self, model: Model, is_leader: bool):
         self.model = model
+        self.is_leader = is_leader
 
     @property
     def cluster_relation(self) -> Optional[Relation]:
         """The S3 relation."""
         return self.model.get_relation(CLUSTER)
 
-    def get_cluster_data(self, mode: MODE = "r") -> Optional[PeerRelationAppData]:
+    @property
+    def cluster(self) -> Optional[PeerRelationAppData]:
         if relation := self.cluster_relation:
             try:
                 relation_content = relation.data[relation.app]
                 data = PeerRelationAppData.read(relation_content)
-                if mode == "w":
+                if self.is_leader:
                     data.bind(relation_content)
                 return data
             except ValidationError as e:
