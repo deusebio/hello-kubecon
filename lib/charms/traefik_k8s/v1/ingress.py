@@ -54,12 +54,14 @@ class SomeCharm(CharmBase):
 import logging
 import socket
 import typing
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
-import yaml
 from ops.charm import CharmBase, RelationBrokenEvent, RelationEvent
 from ops.framework import EventSource, Object, ObjectEvents, StoredState
 from ops.model import ModelError, Relation
+
+from pydantic import ValidationError, ConfigDict, BaseModel
+from charms.core.relations import BaseRelationData
 
 # The unique Charmhub library identifier, never change it
 LIBID = "e6de2a5cd5b34422a204668f3b8f90d2"
@@ -76,72 +78,25 @@ RELATION_INTERFACE = "ingress"
 
 log = logging.getLogger(__name__)
 
-try:
-    import jsonschema
 
-    DO_VALIDATION = True
-except ModuleNotFoundError:
-    log.warning(
-        "The `ingress` library needs the `jsonschema` package to be able "
-        "to do runtime data validation; without it, it will still work but validation "
-        "will be disabled. \n"
-        "It is recommended to add `jsonschema` to the 'requirements.txt' of your charm, "
-        "which will enable this feature."
-    )
-    DO_VALIDATION = False
+class RequirerData(BaseRelationData):
 
-INGRESS_REQUIRES_APP_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "model": {"type": "string"},
-        "name": {"type": "string"},
-        "host": {"type": "string"},
-        "port": {"type": "string"},
-        "strip-prefix": {"type": "string"},
-    },
-    "required": ["model", "name", "host", "port"],
-}
-
-INGRESS_PROVIDES_APP_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "ingress": {"type": "object", "properties": {"url": {"type": "string"}}},
-    },
-    "required": ["ingress"],
-}
-
-try:
-    from typing import TypedDict
-except ImportError:
-    from typing_extensions import TypedDict  # py35 compat
-
-# Model of the data a unit implementing the requirer will need to provide.
-RequirerData = TypedDict(
-    "RequirerData",
-    {"model": str, "name": str, "host": str, "port": int, "strip-prefix": bool},
-    total=False,
-)
-# Provider ingress data model.
-ProviderIngressData = TypedDict("ProviderIngressData", {"url": str})
-# Provider application databag model.
-ProviderApplicationData = TypedDict("ProviderApplicationData", {"ingress": ProviderIngressData})  # type: ignore
+    model: str
+    name: str
+    host: str
+    port: int
+    strip_prefix: bool = False
 
 
-def _validate_data(data, schema):
-    """Checks whether `data` matches `schema`.
-
-    Will raise DataValidationError if the data is not valid, else return None.
-    """
-    if not DO_VALIDATION:
-        return
-    try:
-        jsonschema.validate(instance=data, schema=schema)
-    except jsonschema.ValidationError as e:
-        raise DataValidationError(data, schema) from e
+class ProviderIngressData(BaseModel):
+    url: Optional[str] = None
 
 
-class DataValidationError(RuntimeError):
-    """Raised when data validation fails on IPU relation data."""
+class ProviderApplicationData(BaseRelationData):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    _backend = "yaml"
+
+    ingress: Optional[ProviderIngressData] = None
 
 
 class _IngressPerAppBase(Object):
@@ -269,11 +224,11 @@ class IngressPerAppProvider(_IngressPerAppBase):
             data = self._get_requirer_data(event.relation)
             self.on.data_provided.emit(  # type: ignore
                 event.relation,
-                data["name"],
-                data["model"],
-                data["port"],
-                data["host"],
-                data.get("strip-prefix", False),
+                data.name,
+                data.model,
+                data.port,
+                data.host,
+                data.strip_prefix,
             )
 
     def _handle_relation_broken(self, event):
@@ -291,7 +246,7 @@ class IngressPerAppProvider(_IngressPerAppBase):
                 "lingering around.".format(e, relation.name)
             )
             return
-        del relation.data[self.app]["ingress"]
+        ProviderApplicationData().bind(relation.data[self.app])
 
     def _get_requirer_data(self, relation: Relation) -> RequirerData:  # type: ignore
         """Fetch and validate the requirer's app databag.
@@ -303,18 +258,9 @@ class IngressPerAppProvider(_IngressPerAppBase):
             # Handle edge case where remote app name can be missing, e.g.,
             # relation_broken events.
             # FIXME https://github.com/canonical/traefik-k8s-operator/issues/34
-            return {}
+            return RequirerData() # This won't work
 
-        databag = relation.data[relation.app]
-        remote_data = {}  # type: Dict[str, Union[int, str]]
-        for k in ("port", "host", "model", "name", "mode", "strip-prefix"):
-            v = databag.get(k)
-            if v is not None:
-                remote_data[k] = v
-        _validate_data(remote_data, INGRESS_REQUIRES_APP_SCHEMA)
-        remote_data["port"] = int(remote_data["port"])
-        remote_data["strip-prefix"] = bool(remote_data.get("strip-prefix", False))
-        return typing.cast(RequirerData, remote_data)
+        return RequirerData.read(relation.data[relation.app])
 
     def get_data(self, relation: Relation) -> RequirerData:  # type: ignore
         """Fetch the remote app's databag, i.e. the requirer data."""
@@ -327,7 +273,7 @@ class IngressPerAppProvider(_IngressPerAppBase):
 
         try:
             return bool(self._get_requirer_data(relation))
-        except DataValidationError as e:
+        except ValidationError as e:
             log.warning("Requirer not ready; validation error encountered: %s" % str(e))
             return False
 
@@ -339,23 +285,21 @@ class IngressPerAppProvider(_IngressPerAppBase):
             # relation_broken events.
             # Also, only leader units can read own app databags.
             # FIXME https://github.com/canonical/traefik-k8s-operator/issues/34
-            return typing.cast(ProviderIngressData, {})  # noqa
+            return ProviderIngressData()  # noqa
 
         # fetch the provider's app databag
-        raw_data = relation.data[self.app].get("ingress")
-        if not raw_data:
+        app_data = ProviderApplicationData.read(relation.data[self.app])
+
+        if not app_data.ingress or app_data.ingress.url:
             raise RuntimeError("This application did not `publish_url` yet.")
 
-        ingress: ProviderIngressData = yaml.safe_load(raw_data)
-        _validate_data({"ingress": ingress}, INGRESS_PROVIDES_APP_SCHEMA)
-        return ingress
+        return app_data.ingress
 
     def publish_url(self, relation: Relation, url: str):
         """Publish to the app databag the ingress url."""
-        ingress = {"url": url}
-        ingress_data = {"ingress": ingress}
-        _validate_data(ingress_data, INGRESS_PROVIDES_APP_SCHEMA)
-        relation.data[self.app]["ingress"] = yaml.safe_dump(ingress)
+        ProviderApplicationData(
+            ingress=ProviderIngressData(url=url)
+        ).bind(relation.data[self.app])
 
     @property
     def proxied_endpoints(self):
@@ -481,7 +425,7 @@ class IngressPerAppRequirer(_IngressPerAppBase):
         """The Requirer is ready if the Provider has sent valid data."""
         try:
             return bool(self._get_url_from_relation_data())
-        except DataValidationError as e:
+        except ValidationError as e:
             log.warning("Requirer not ready; validation error encountered: %s" % str(e))
             return False
 
@@ -509,18 +453,11 @@ class IngressPerAppRequirer(_IngressPerAppBase):
         if not host:
             host = socket.getfqdn()
 
-        data = {
-            "model": self.model.name,
-            "name": self.app.name,
-            "host": host,
-            "port": str(port),
-        }
-
-        if self._strip_prefix:
-            data["strip-prefix"] = "true"
-
-        _validate_data(data, INGRESS_REQUIRES_APP_SCHEMA)
-        self.relation.data[self.app].update(data)
+        RequirerData(
+            model=self.model.name,
+            name=self.app.name,
+            host=host, port=port
+        ).bind(self.relation.data[self.app])
 
     @property
     def relation(self):
@@ -536,23 +473,11 @@ class IngressPerAppRequirer(_IngressPerAppBase):
         if not relation:
             return None
 
+        assert relation.app, "no app in relation (shouldn't happen)"  # for type checker
+
+        app_data = ProviderApplicationData.read(relation.data[relation.app])
         # fetch the provider's app databag
-        try:
-            assert relation.app, "no app in relation (shouldn't happen)"  # for type checker
-            raw = relation.data.get(relation.app, {}).get("ingress")
-        except ModelError as e:
-            log.debug(
-                f"Error {e} attempting to read remote app data; "
-                f"probably we are in a relation_departed hook"
-            )
-            return None
-
-        if not raw:
-            return None
-
-        ingress: ProviderIngressData = yaml.safe_load(raw)
-        _validate_data({"ingress": ingress}, INGRESS_PROVIDES_APP_SCHEMA)
-        return ingress["url"]
+        return app_data.ingress.url if app_data.ingress else None
 
     @property
     def url(self) -> Optional[str]:
