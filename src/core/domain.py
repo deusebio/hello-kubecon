@@ -4,10 +4,11 @@ from pydantic import BaseModel, model_validator, ConfigDict
 from pydantic.functional_validators import AfterValidator
 from typing_extensions import Annotated
 
+from charms.core.classes import ReadOnlyData
 from charms.core.relations import BaseRelationData
 
 
-class HelloKubeconConfig(BaseModel):
+class HelloKubeconConfig(ReadOnlyData):
     """Data model for charm config."""
 
     external_hostname: str
@@ -30,7 +31,7 @@ def is_url(v: str):
 Url = Annotated[str, AfterValidator(is_url)]
 
 
-class PullActionModel(BaseModel):
+class PullActionModel(ReadOnlyData):
     """Data model for parameters of the pull action."""
 
     url: Url

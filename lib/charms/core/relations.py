@@ -1,19 +1,13 @@
 import json
-import logging
+from typing import (
+    Optional, ClassVar, Literal, Tuple
+)
 
 import yaml
-from functools import wraps
-from typing import (
-    Optional, Type, Callable, ClassVar, TypeVar, Union, Literal, Tuple
-)
-from typing_extensions import Protocol
-
-
-from ops.charm import CharmBase, RelationEvent, EventBase
 from ops.model import RelationDataContent
-from pydantic import BaseModel, ValidationError
-from typing_extensions import Self
+from pydantic import BaseModel
 from pydantic.json import pydantic_encoder
+from typing_extensions import Self
 
 Backend = Literal["json", "yaml"]
 
@@ -87,10 +81,12 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         if cls._backend == "json":
             def func(raw):
                 return json.loads(raw)
+
             return func
         elif cls._backend == "yaml":
             def func(raw):
                 return yaml.safe_load(raw)
+
             return func
 
     @classmethod
@@ -122,7 +118,12 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         )
 
     def __setattr__(self, name, value):
+        if name != "_relation" and self._relation is None:
+            raise IOError(
+                f"property {name} cannot be set, as the model is not binded to any databag")
+
         BaseModel.__setattr__(self, name, value)
+
         if self._relation is not None and name != "_relation":
             parsed_value = getattr(self, name)
             serialized_key, serialized_value = self.serialize(name,
@@ -162,43 +163,3 @@ class BaseRelationData(BaseModel, validate_assignment=True):
             for field_name, field in cls.__fields__.items()
             if (parsed_key := field_name.replace("_", "-")) in relation_data
         })
-
-
-S = TypeVar("S")
-Model = TypeVar("Model", bound=BaseRelationData)
-
-ParsedModel = Union[Model, ValidationError]
-
-
-class HookWithData(Protocol):
-    def __call__(
-            self, charm: CharmBase, event: RelationEvent, *models: ParsedModel
-    ) -> None: ...
-
-
-def parse_relation_data(
-        get_data: Callable[[EventBase], RelationDataContent],
-        model: Type[Model]
-):
-    """Return a decorator to allow pydantic parsing of relation content.
-
-    Args:
-        get_data: callable to retrieve the relation content.
-        model: Pydantic class representing the model to be used for parsing.
-    """
-
-    def decorator(hook: HookWithData) -> HookWithData:
-        @wraps(hook)
-        def event_wrapper(self: CharmBase, event: RelationEvent, *others: ParsedModel):
-
-            try:
-                content = get_data(event)
-                data = model.read(content)
-            except ValidationError as e:
-                data = e
-
-            return hook(self, event, *(others + (data,)))
-
-        return event_wrapper
-
-    return decorator

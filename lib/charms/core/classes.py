@@ -1,14 +1,30 @@
 from functools import cached_property
-from functools import wraps
-from typing import TypeVar, Generic, Type, Callable, Union
+from typing import TypeVar, Generic, Type, Any, Dict, Union
 
-from ops.charm import CharmBase, ActionEvent
+from typing_extensions import Self
+
+from ops.charm import CharmBase
+from ops.model import ConfigData
 from pydantic import BaseModel, ValidationError
 
-TypedConfig = TypeVar("TypedConfig", bound=BaseModel)
+ReadOnlyTypes = Union[ConfigData, Dict[str, Any]]
 
-T = TypeVar("T", bound=BaseModel)
-S = TypeVar("S", bound=BaseModel)
+
+class ReadOnlyData(BaseModel):
+
+    @classmethod
+    def read(cls, raw: ReadOnlyTypes) -> Self:
+        try:
+            table = str.maketrans("-", "_")
+            return cls(**{
+                key.translate(table): value
+                for key, value in raw.items()
+            })
+        except ValidationError as e:
+            raise e
+
+
+TypedConfig = TypeVar("TypedConfig", bound=ReadOnlyData)
 
 
 class TypeSafeCharmBase(CharmBase, Generic[TypedConfig]):
@@ -18,28 +34,4 @@ class TypeSafeCharmBase(CharmBase, Generic[TypedConfig]):
 
     @cached_property
     def config(self) -> TypedConfig:
-        """Return a config instance, which is validated and parsed using the provided pydantic class."""
-        translated_keys = {k.replace("-", "_"): v for k, v in self.model.config.items()}
-        return self.config_type(**translated_keys)
-
-
-def validate_params(cls: Type[T]):
-    """Return a decorator to allow pydantic parsing of action parameters.
-
-       Args:
-           app_model: Pydantic class representing the model to be used for parsing the content of the action parameter
-    """
-    def decorator(f: Callable[[CharmBase, ActionEvent, Union[T, ValidationError]], S]) -> Callable[
-        [CharmBase, ActionEvent], S]:
-        @wraps(f)
-        def event_wrapper(self: CharmBase, event: ActionEvent):
-            try:
-                table = str.maketrans("-", "_")
-                params = cls(**{key.translate(table): value for key, value in event.params.items()})
-            except ValidationError as e:
-                params = e
-            return f(self, event, params)
-
-        return event_wrapper
-
-    return decorator
+        return self.config_type.read(self.model.config)

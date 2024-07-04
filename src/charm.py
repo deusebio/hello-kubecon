@@ -15,24 +15,21 @@ develop a new k8s charm using the Operator Framework:
 import logging
 import random
 import urllib
-from typing import Optional, Union
 
 from charms.traefik_k8s.v1.ingress import IngressPerAppRequirer
-from ops.main import main
 from ops.charm import ActionEvent, RelationEvent, RelationCreatedEvent
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
 from pydantic import ValidationError
 
-
+from charms.core.main import main
 from charms.core.classes import TypeSafeCharmBase
-from charms.core.classes import validate_params
-from charms.core.relations import parse_relation_data
 from core.domain import (
     HelloKubeconConfig, PullActionModel, PeerRelationAppData, SubField, PeerUnitData
 )
 from core.context import Context
 
 logger = logging.getLogger(__name__)
+
 
 class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
     """Charm the service."""
@@ -123,13 +120,11 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
         # Set the unit status back to Active
         self.unit.status = ActiveStatus()
 
-    @validate_params(PullActionModel)
-    def _pull_site_action(self, event: ActionEvent, params: Optional[Union[PullActionModel, ValidationError]] = None):
+    def _pull_site_action(self, event: ActionEvent):
         """Action handler that pulls the latest site archive and unpacks it"""
-        if isinstance(params, ValidationError):
-            event.fail("input params did not pass validation")
-            logger.error(params)
-            return
+
+        # If validation is raised, it will be catched by the outer main
+        params = PullActionModel.read(event.params)
 
         logger.info(f"My URL is: {params.url}")
         self._fetch_site(params.url)
@@ -144,40 +139,28 @@ class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
                 complex_property=[SubField(subkey="subkey")]
             ).bind(event.relation.data[event.app])
 
-    @parse_relation_data(
-        get_data=lambda event: event.relation.data.get(event.app, {}),
-        model=PeerRelationAppData
-    )
-    @parse_relation_data(
-        get_data=lambda event: event.relation.data.get(event.unit, {}),
-        model=PeerUnitData
-    )
-    def _on_cluster_relation_changed(
-            self, event: RelationEvent,
-            app: Optional[
-                Union[PeerRelationAppData, ValidationError]
-            ] = None,
-            unit: Optional[
-                Union[PeerRelationAppData, ValidationError]
-            ] = None,
-    ) -> None:
+    def _on_cluster_relation_changed(self, event: RelationEvent) -> None:
         """Adds the peer unit in an awesome way
         Args:
             event: The triggering relation joined/changed event.
         """
         logger.info(f"Unit: {event.unit}")
 
-        if isinstance(app, ValidationError):
-            logger.warning(f"Could not parse app data because of {app}")
-        else:
+        try:
+            app = PeerRelationAppData.read(
+                event.relation.data.get(event.app, {})
+            )
             logger.info(f"The app data model is {app}")
+        except ValidationError as e:
+            logger.warning(f"Could not parse app data because of {e}")
 
-        if isinstance(unit, ValidationError):
-            logger.warning(f"Could not parse unit data because of {unit}")
-        else:
+        try:
+            unit = PeerUnitData.read(
+                event.relation.data.get(event.unit, {})
+            )
             logger.info(f"The unit data model is {unit}")
-
-
+        except ValidationError as e:
+            logger.warning(f"Could not parse app data because of {e}")
 
     def _update_status(self, _: RelationEvent):
         if self.unit.is_leader():
