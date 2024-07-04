@@ -61,7 +61,8 @@ from ops.framework import EventSource, Object, ObjectEvents, StoredState
 from ops.model import ModelError, Relation
 
 from pydantic import ValidationError, ConfigDict, BaseModel
-from charms.core.relations import BaseRelationData
+from common.core.v2.relations import BaseRelationData
+from common.core.v2.serializers import YamlSerializer
 
 # The unique Charmhub library identifier, never change it
 LIBID = "e6de2a5cd5b34422a204668f3b8f90d2"
@@ -94,7 +95,7 @@ class ProviderIngressData(BaseModel):
 
 class ProviderApplicationData(BaseRelationData):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    _backend = "yaml"
+    _backend = YamlSerializer()
 
     ingress: Optional[ProviderIngressData] = None
 

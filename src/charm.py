@@ -21,8 +21,8 @@ from ops.charm import ActionEvent, RelationEvent, RelationCreatedEvent
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
 from pydantic import ValidationError
 
-from charms.core.main import main
-from charms.core.classes import TypeSafeCharmBase
+from common.core.main import main
+from common.core.classes import TypeSafeCharmBase
 from core.domain import (
     HelloKubeconConfig, PullActionModel, PeerRelationAppData, SubField, PeerUnitData
 )

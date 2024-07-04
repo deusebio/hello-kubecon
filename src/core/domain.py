@@ -4,8 +4,9 @@ from pydantic import BaseModel, model_validator, ConfigDict
 from pydantic.functional_validators import AfterValidator
 from typing_extensions import Annotated
 
-from charms.core.classes import ReadOnlyData
-from charms.core.relations import BaseRelationData
+from common.core.classes import ReadOnlyData
+from common.core.v2.relations import BaseRelationData
+from common.core.v2.serializers import JsonSerializer
 
 
 class HelloKubeconConfig(ReadOnlyData):
@@ -44,6 +45,7 @@ class SubField(BaseModel):
 
 class PeerRelationAppData(BaseRelationData):
     """Data model for the relation databag."""
+    _backend = JsonSerializer()
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     my_key: float
@@ -51,4 +53,6 @@ class PeerRelationAppData(BaseRelationData):
 
 
 class PeerUnitData(BaseRelationData):
+    _backend = JsonSerializer()
+
     ingress_address: str
