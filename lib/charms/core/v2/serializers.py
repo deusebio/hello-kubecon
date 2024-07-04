@@ -12,7 +12,20 @@ NativeTypes = str | int | float
 
 T = TypeVar("T", bound=BaseModel)
 
+from abc import abstractmethod
+
+
 class Serializer(Generic[T]):
+
+    @classmethod
+    @abstractmethod
+    def dump(cls, obj: dict | list) -> str:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def load(cls, obj: str) -> dict | list:
+        pass
 
     @classmethod
     def serialize(cls, name: str, value: NativeTypes | BaseModel | dict) -> Tuple[str, str]:
@@ -24,9 +37,9 @@ class Serializer(Generic[T]):
         ):
             serialized_value = str(value)
         elif isinstance(value, BaseModel):
-            serialized_value = cls._dumps()(value.dict())
+            serialized_value = cls.dump(value.dict())
         elif isinstance(value, dict) or isinstance(value, list):
-            serialized_value = cls._dumps()(value)
+            serialized_value = cls.dump(value)
         else:
             raise ValueError(f"Type of value {type(value)} not serializable")
 
@@ -34,6 +47,19 @@ class Serializer(Generic[T]):
             name.replace("_", "-"),
             serialized_value
         )
+
+    @classmethod
+    def deserialize(cls, key: str, value: str):
+
+
+
+        field_name: cls._loads()(
+            relation_data[parsed_key]) if field.annotation not in (
+            str, int) else str(relation_data[parsed_key])
+        for field_name, field in cls.__fields__.items()
+            if (parsed_key := field_name.replace("_", "-")) in relation_data
+
+
 
     @classmethod
     def read(cls, relation_data: RelationDataContent) -> T:
@@ -52,11 +78,6 @@ class Serializer(Generic[T]):
         })
 
 
-    def dump(self, obj: BaseModel) -> str:
-        pass
-
-    def load(self, raw: str) -> BaseModel:
-        pass
 
 class JsonSerializer(Serializer):
     def dump(self, obj: BaseModel) -> str:
