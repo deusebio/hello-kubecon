@@ -13,25 +13,48 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import logging
+import random
 import urllib
 
 from charms.traefik_k8s.v1.ingress import IngressPerAppRequirer
-from ops.charm import CharmBase
-from ops.main import main
+from ops.charm import ActionEvent, RelationEvent, RelationCreatedEvent
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
+from pydantic import ValidationError
+
+from charms.core.main import main
+from charms.core.classes import TypeSafeCharmBase
+from core.domain import (
+    HelloKubeconConfig, PullActionModel, PeerRelationAppData, SubField, PeerUnitData
+)
+from core.context import Context
 
 logger = logging.getLogger(__name__)
 
 
-class HelloKubeconCharm(CharmBase):
+class HelloKubeconCharm(TypeSafeCharmBase[HelloKubeconConfig]):
     """Charm the service."""
+
+    config_type = HelloKubeconConfig
 
     def __init__(self, *args):
         super().__init__(*args)
+
+        self.context = Context(self.model, self.unit.is_leader())
+
         self.framework.observe(self.on.install, self._on_install)
         self.framework.observe(self.on.config_changed, self._on_config_changed)
         self.framework.observe(self.on.gosherve_pebble_ready, self._on_config_changed)
         self.framework.observe(self.on.pull_site_action, self._pull_site_action)
+
+        self.framework.observe(self.on.update_status, self._update_status)
+
+        self.framework.observe(self.on.cluster_relation_created,
+                               self._on_cluster_relation_created)
+        self.framework.observe(self.on.cluster_relation_changed,
+                               self._on_cluster_relation_changed)
+        self.framework.observe(self.on.cluster_relation_joined,
+                               self._on_cluster_relation_changed)
+
         self.ingress = IngressPerAppRequirer(
             self,
             port=8080,
@@ -41,7 +64,7 @@ class HelloKubeconCharm(CharmBase):
 
     def _on_install(self, _):
         # Download the site
-        self._fetch_site()
+        self._fetch_site("https://jnsgr.uk/demo-site")
 
     def _on_config_changed(self, event):
         """Handle the config-changed event"""
@@ -78,17 +101,17 @@ class HelloKubeconCharm(CharmBase):
                     "command": "/gosherve",
                     "startup": "enabled",
                     "environment": {
-                        "REDIRECT_MAP_URL": self.config["redirect-map"],
+                        "REDIRECT_MAP_URL": self.config.redirect_map,
                         "WEBROOT": "/srv",
                     },
                 }
             },
         }
 
-    def _fetch_site(self):
+    def _fetch_site(self, site_src: str):
         """Fetch latest copy of website from Github and move into webroot"""
         # Set the site URL
-        site_src = "https://jnsgr.uk/demo-site"
+        # site_src = "https://jnsgr.uk/demo-site"
         # Set some status and do some logging
         self.unit.status = MaintenanceStatus("Fetching web site")
         logger.info("Downloading site from %s", site_src)
@@ -97,10 +120,54 @@ class HelloKubeconCharm(CharmBase):
         # Set the unit status back to Active
         self.unit.status = ActiveStatus()
 
-    def _pull_site_action(self, event):
+    def _pull_site_action(self, event: ActionEvent):
         """Action handler that pulls the latest site archive and unpacks it"""
-        self._fetch_site()
+
+        # If validation is raised, it will be catched by the outer main
+        params = PullActionModel.read(event.params)
+
+        logger.info(f"My URL is: {params.url}")
+        self._fetch_site(params.url)
         event.set_results({"result": "site pulled"})
+
+    def _on_cluster_relation_created(self, event: RelationCreatedEvent):
+        if self.unit.is_leader():
+            logger.info(f"Writing data to the databag")
+
+            PeerRelationAppData(
+                my_key=42,
+                complex_property=[SubField(subkey="subkey")]
+            ).bind(event.relation.data[event.app])
+
+    def _on_cluster_relation_changed(self, event: RelationEvent) -> None:
+        """Adds the peer unit in an awesome way
+        Args:
+            event: The triggering relation joined/changed event.
+        """
+        logger.info(f"Unit: {event.unit}")
+
+        try:
+            app = PeerRelationAppData.read(
+                event.relation.data.get(event.app, {})
+            )
+            logger.info(f"The app data model is {app}")
+        except ValidationError as e:
+            logger.warning(f"Could not parse app data because of {e}")
+
+        try:
+            unit = PeerUnitData.read(
+                event.relation.data.get(event.unit, {})
+            )
+            logger.info(f"The unit data model is {unit}")
+        except ValidationError as e:
+            logger.warning(f"Could not parse app data because of {e}")
+
+    def _update_status(self, _: RelationEvent):
+        if self.unit.is_leader():
+            self.context.cluster.my_key = round(random.random()*100, 2)
+
+        if self.context.ingress:
+            logger.info(f"My ingress is: {self.context.ingress.url}")
 
 
 if __name__ == "__main__":

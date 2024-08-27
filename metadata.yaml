@@ -33,3 +33,7 @@ requires:
   ingress:
     interface: ingress
     limit: 1
+
+peers:
+  cluster:
+    interface: cluster
