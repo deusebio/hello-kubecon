@@ -3,7 +3,7 @@ from typing import Literal, ClassVar, Optional, Generic, TypeVar, Tuple
 import json
 from pydantic.json import pydantic_encoder
 
-
+from pydantic import Field
 from ops import RelationDataContent
 
 Backend = Literal["json", "yaml"]
@@ -28,7 +28,7 @@ class Serializer(Generic[T]):
         pass
 
     @classmethod
-    def serialize(cls, name: str, value: NativeTypes | BaseModel | dict) -> Tuple[str, str]:
+    def serialize(cls, name: str, value: NativeTypes | BaseModel | dict | list) -> Tuple[str, str]:
         """Serialize the key, value pair."""
         if (
                 isinstance(value, str) or
@@ -48,15 +48,13 @@ class Serializer(Generic[T]):
             serialized_value
         )
 
+
     @classmethod
-    def deserialize(cls, key: str, value: str):
+    def deserialize(cls, key: str, value: str, field: Field):
 
-
-
-        field_name: cls._loads()(
-            relation_data[parsed_key]) if field.annotation not in (
+        field_name: cls.load(relation_data[parsed_key]) if field.annotation not in (
             str, int) else str(relation_data[parsed_key])
-        for field_name, field in cls.__fields__.items()
+        for field_name, field in cls.__fields__.items():
             if (parsed_key := field_name.replace("_", "-")) in relation_data
 
 
