@@ -5,6 +5,7 @@ from pydantic.json import pydantic_encoder
 
 from pydantic import Field
 from ops import RelationDataContent
+from typing import Mapping
 
 Backend = Literal["json", "yaml"]
 
@@ -15,7 +16,7 @@ T = TypeVar("T", bound=BaseModel)
 from abc import abstractmethod
 
 
-class Serializer(Generic[T]):
+class Serializer:
 
     @classmethod
     @abstractmethod
@@ -48,43 +49,29 @@ class Serializer(Generic[T]):
             serialized_value
         )
 
-
     @classmethod
-    def deserialize(cls, key: str, value: str, field: Field):
-
-        field_name: cls.load(relation_data[parsed_key]) if field.annotation not in (
-            str, int) else str(relation_data[parsed_key])
-        for field_name, field in cls.__fields__.items():
-            if (parsed_key := field_name.replace("_", "-")) in relation_data
-
-
-
-    @classmethod
-    def read(cls, relation_data: RelationDataContent) -> T:
-        """Read data from a relation databag and parse it into a domain object.
-
-        Args:
-            relation_data: pointer to the relation databag
-            obj: pydantic class represeting the model to be used for parsing
-        """
-        return cls(**{
-            field_name: cls._loads()(
-                relation_data[parsed_key]) if field.annotation not in (
-                str, int) else str(relation_data[parsed_key])
-            for field_name, field in cls.__fields__.items()
-            if (parsed_key := field_name.replace("_", "-")) in relation_data
-        })
-
+    def deserialize(cls, data: Mapping[str, str], field: Field) -> Optional[str | list | dict]:
+        parsed_key = field.name.replace("_", "-")
+        if parsed_key not in data:
+            return None
+        value = data[parsed_key]
+        return cls.load(value) if field.annotation not in (str, int) else str(value)
 
 
 class JsonSerializer(Serializer):
-    def dump(self, obj: BaseModel) -> str:
+    def dump(self, obj: dict | list) -> str:
         return json.dumps(obj, default=pydantic_encoder)
 
-    def load(self, raw: str) -> BaseModel:
-        pass
+    def load(self, raw: str) -> dict | list:
+        return json.loads(raw)
 
 
+class YamlSerializer(Serializer):
+    def dump(self, obj: dict | list) -> str:
+        return yaml.dumps(obj, default=pydantic_encoder)
+
+    def load(self, raw: str) -> dict | list:
+        return yaml.loads(raw)
 
 
 class BaseRelationData(BaseModel, validate_assignment=True):
@@ -147,48 +134,8 @@ class BaseRelationData(BaseModel, validate_assignment=True):
     ```
     """
 
-    _backend: ClassVar[Backend] = "json"
-
+    _backend: Serializer
     _relation: Optional[RelationDataContent] = None
-
-    @classmethod
-    def _loads(cls):
-        if cls._backend == "json":
-            def func(raw):
-                return json.loads(raw)
-            return func
-        elif cls._backend == "yaml":
-            def func(raw):
-                return yaml.safe_load(raw)
-            return func
-
-    @classmethod
-    def _dumps(cls):
-        if cls._backend == "json":
-            return lambda obj: json.dumps(obj, default=pydantic_encoder)
-        elif cls._backend == "yaml":
-            return lambda obj: yaml.safe_dump(obj)
-
-    @classmethod
-    def serialize(cls, name, value) -> Tuple[str, str]:
-        """Serialize the key, value pair."""
-        if (
-                isinstance(value, str) or
-                isinstance(value, int) or
-                isinstance(value, float)
-        ):
-            serialized_value = str(value)
-        elif isinstance(value, BaseModel):
-            serialized_value = cls._dumps()(value.dict())
-        elif isinstance(value, dict) or isinstance(value, list):
-            serialized_value = cls._dumps()(value)
-        else:
-            raise ValueError(f"Type of value {type(value)} not serializable")
-
-        return (
-            name.replace("_", "-"),
-            serialized_value
-        )
 
     def __setattr__(self, name, value):
         if name != "_relation" and self._relation is None:
@@ -198,8 +145,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
 
         if self._relation is not None and name != "_relation":
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self.serialize(name,
-                                                              parsed_value)
+            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
             self._relation[serialized_key] = serialized_value
 
     def bind(self, relation: RelationDataContent):
@@ -211,8 +157,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         self._relation = relation
         for name in self.__fields__.keys():
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self.serialize(name,
-                                                              parsed_value)
+            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
             self._relation[serialized_key] = serialized_value
         return self
 
@@ -229,9 +174,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
             obj: pydantic class represeting the model to be used for parsing
         """
         return cls(**{
-            field_name: cls._loads()(
-                relation_data[parsed_key]) if field.annotation not in (
-                str, int) else str(relation_data[parsed_key])
+            field_name: value
             for field_name, field in cls.__fields__.items()
-            if (parsed_key := field_name.replace("_", "-")) in relation_data
+            if (value := cls._backend.deserialize(relation_data, field))
         })
