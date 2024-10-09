@@ -4,8 +4,10 @@ import json
 from pydantic.json import pydantic_encoder
 
 from pydantic import Field
-from ops import RelationDataContent
+from ops import RelationDataContent, Model
 from typing import Mapping
+
+import yaml
 
 Backend = Literal["json", "yaml"]
 
@@ -73,6 +75,31 @@ class YamlSerializer(Serializer):
     def load(self, raw: str) -> dict | list:
         return yaml.loads(raw)
 
+class SecretWrapper(Serializer):
+
+    def __init__(
+        self, serializer: Serializer, model: Model, secrets: dict[str, str]
+    ):
+        self.serializer = serializer
+        self.model = model
+        self.secrets = secrets
+
+    def dump(self, obj: dict | list) -> str:
+        content =  self.serializer.dump(obj, default=pydantic_encoder)
+        # write content to secret
+
+    def load(self, raw: str) -> dict | list:
+        return yaml.loads(raw)
+
+    @classmethod
+    def from_data_content(cls, data_content: Mapping[[str, str], key_secrets: list[str]):
+        # read secrets id
+        pass
+
+class Protocol:
+    serializer: Serializer
+    data: RelationDataContent
+
 
 class BaseRelationData(BaseModel, validate_assignment=True):
     """Base class to provide pydantic representation for Juju databag.
@@ -134,39 +161,38 @@ class BaseRelationData(BaseModel, validate_assignment=True):
     ```
     """
 
-    _backend: Serializer
-    _relation: Optional[RelationDataContent] = None
+    _protocol: Optional[Protocol] = None
 
     def __setattr__(self, name, value):
-        if name != "_relation" and self._relation is None:
+        if name != "_protocol" and self._protocol is None:
             raise IOError(f"property {name} cannot be set, as the model is not binded to any databag")
 
         BaseModel.__setattr__(self, name, value)
 
-        if self._relation is not None and name != "_relation":
+        if (protocol := self._protocol) and name != "_protocol":
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
-            self._relation[serialized_key] = serialized_value
+            serialized_key, serialized_value = protocol.serializer.serialize(name, parsed_value)
+            self._protocol.data[serialized_key] = serialized_value
 
-    def bind(self, relation: RelationDataContent):
+    def bind(self, protocol: Protocol):
         """Create a binding with a relation data.
 
         When updating the pydantic attributes, the values will be serialized
         to the relation data bag.
         """
-        self._relation = relation
+        self._protocol = protocol
         for name in self.__fields__.keys():
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
-            self._relation[serialized_key] = serialized_value
+            serialized_key, serialized_value = protocol.serializer.serialize(name, parsed_value)
+            self._protocol.data[serialized_key] = serialized_value
         return self
 
     def unbind(self):
-        self._relation = None
+        self._protocol = None
         return self
 
     @classmethod
-    def read(cls, relation_data: RelationDataContent) -> Self:
+    def read(cls, protocol: Protocol) -> Self:
         """Read data from a relation databag and parse it into a domain object.
 
         Args:
@@ -176,5 +202,5 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         return cls(**{
             field_name: value
             for field_name, field in cls.__fields__.items()
-            if (value := cls._backend.deserialize(relation_data, field))
+            if (value := protocol.serializer.deserialize(protocol.data, field))
         })
