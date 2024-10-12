@@ -4,7 +4,7 @@ from typing_extensions import Self
 from ops import RelationDataContent
 from pydantic import BaseModel
 
-from common.core.v2.serializers import Serializer, JsonSerializer
+from common.core.v2.serializers import BaseSerializer, JsonSerializer
 
 class BaseRelationData(BaseModel, validate_assignment=True):
     """Base class to provide pydantic representation for Juju databag.
@@ -66,7 +66,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
     ```
     """
 
-    _backend: ClassVar[Serializer] = JsonSerializer()
+    _backend: ClassVar[BaseSerializer] = JsonSerializer()
     _relation: Optional[RelationDataContent] = None
 
     def __setattr__(self, name, value):

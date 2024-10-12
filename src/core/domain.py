@@ -6,7 +6,7 @@ from typing_extensions import Annotated
 
 from common.core.classes import ReadOnlyData
 from common.core.v2.relations import BaseRelationData
-from common.core.v2.serializers import JsonSerializer
+from common.core.v2.serializers import JsonSerializer, YamlSerializer
 
 
 class HelloKubeconConfig(ReadOnlyData):

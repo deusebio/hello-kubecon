@@ -13,8 +13,20 @@ T = TypeVar("T", bound=BaseModel)
 
 from abc import abstractmethod
 
+class BaseSerializer:
 
-class Serializer:
+    @classmethod
+    def serialize(cls, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
+        """Return the serialized version of the key and value."""
+        pass
+
+    @classmethod
+    def deserialize(cls, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
+        """Return the deserialized version for a given key in the data, according to the specification. """
+        pass
+
+
+class DictSerializer(BaseSerializer):
 
     @classmethod
     @abstractmethod
@@ -26,6 +38,17 @@ class Serializer:
     def load(cls, obj: str) -> Union[dict, list]:
         pass
 
+    @staticmethod
+    def _to_raw(item: Union[BaseModel, dict, list]) -> Union[list, dict]:
+        if isinstance(item, BaseModel):
+            return item.model_dump()
+        elif isinstance(item, list):
+            return [DictSerializer._to_raw(element) for element in item]
+        elif isinstance(item, dict):
+            return {key: DictSerializer._to_raw(value) for key, value in item.items()}
+        else:
+            raise ValueError(f"type {type(item)} not recognized")
+
     @classmethod
     def serialize(cls, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
         """Serialize the key, value pair."""
@@ -35,10 +58,8 @@ class Serializer:
                 isinstance(value, float)
         ):
             serialized_value = str(value)
-        elif isinstance(value, BaseModel):
-            serialized_value = cls.dump(value.dict())
-        elif isinstance(value, dict) or isinstance(value, list):
-            serialized_value = cls.dump(value)
+        elif isinstance(value, BaseModel) or isinstance(value, dict) or isinstance(value, list):
+            serialized_value = cls.dump(DictSerializer._to_raw(value))
         else:
             raise ValueError(f"Type of value {type(value)} not serializable")
 
@@ -56,7 +77,7 @@ class Serializer:
         return cls.load(value) if field_info.annotation not in (str, int) else str(value)
 
 
-class JsonSerializer(Serializer):
+class JsonSerializer(DictSerializer):
     @classmethod
     def dump(cls, obj: Union[dict, list]) -> str:
         return json.dumps(obj, default=pydantic_encoder)
@@ -66,7 +87,7 @@ class JsonSerializer(Serializer):
         return json.loads(raw)
 
 
-class YamlSerializer(Serializer):
+class YamlSerializer(DictSerializer):
     @classmethod
     def dump(cls, obj: Union[dict, list]) -> str:
         return yaml.safe_dump(obj)
