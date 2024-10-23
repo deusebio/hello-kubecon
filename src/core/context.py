@@ -8,11 +8,14 @@ from charms.traefik_k8s.v1.ingress import (
     ProviderApplicationData, ProviderIngressData
 )
 from core.domain import PeerRelationAppData
+from charms.data_platform_libs.v0.data_interfaces import DatabaseRequirerData
+from common.data_interfaces import DatabaseConnectionInfo
 
 logger = logging.getLogger(__name__)
 
 CLUSTER = "cluster"
 INGRESS = "ingress"
+DATABASE = "database"
 
 
 class Context:
@@ -21,10 +24,20 @@ class Context:
         self.model = model
         self.is_leader = is_leader
 
+        self.db_requirer = DatabaseRequirerData(
+            self.model, relation_name=DATABASE,
+            database_name="dummy"
+        )
+
     @property
     def cluster_relation(self) -> Optional[Relation]:
         """The S3 relation."""
         return self.model.get_relation(CLUSTER)
+
+    @property
+    def database_relation(self) -> Optional[Relation]:
+        """The S3 relation."""
+        return self.model.get_relation(DATABASE)
 
     @property
     def cluster(self) -> Optional[PeerRelationAppData]:
@@ -54,3 +67,14 @@ class Context:
             except ValidationError as e:
                 logger.debug(f"Cluster relation validation failed: {e}")
 
+    @property
+    def database(self) -> DatabaseConnectionInfo | None:
+        """The state of metastore DB connection."""
+        if relation := self.database_relation:
+            try:
+                return DatabaseConnectionInfo.read(
+                    self.db_requirer.as_dict(relation.id)
+                )
+            except ValidationError as e:
+                logger.debug(f"Cluster relation validation failed: {e}")
+        return None

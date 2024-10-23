@@ -1,10 +1,10 @@
-from typing import Optional, ClassVar
+from typing import Optional, ClassVar, MutableMapping
+
+from pydantic import BaseModel
 from typing_extensions import Self
 
-from ops import RelationDataContent
-from pydantic import BaseModel
-
 from common.core.v2.serializers import BaseSerializer, JsonSerializer
+
 
 class BaseRelationData(BaseModel, validate_assignment=True):
     """Base class to provide pydantic representation for Juju databag.
@@ -67,20 +67,22 @@ class BaseRelationData(BaseModel, validate_assignment=True):
     """
 
     _backend: ClassVar[BaseSerializer] = JsonSerializer()
-    _relation: Optional[RelationDataContent] = None
+    _relation: Optional[MutableMapping] = None
 
     def __setattr__(self, name, value):
         if name != "_relation" and self._relation is None:
-            raise IOError(f"property {name} cannot be set, as the model is not binded to any databag")
+            raise IOError(
+                f"property {name} cannot be set, as the model is not binded to any databag")
 
         BaseModel.__setattr__(self, name, value)
 
         if self._relation is not None and name != "_relation":
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
+            serialized_key, serialized_value = self._backend.serialize(name,
+                                                                       parsed_value)
             self._relation[serialized_key] = serialized_value
 
-    def bind(self, relation: RelationDataContent):
+    def bind(self, relation: MutableMapping[str, str]):
         """Create a binding with a relation data.
 
         When updating the pydantic attributes, the values will be serialized
@@ -89,7 +91,8 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         self._relation = relation
         for name in self.model_fields.keys():
             parsed_value = getattr(self, name)
-            serialized_key, serialized_value = self._backend.serialize(name, parsed_value)
+            serialized_key, serialized_value = self._backend.serialize(name,
+                                                                       parsed_value)
             self._relation[serialized_key] = serialized_value
         return self
 
@@ -98,7 +101,7 @@ class BaseRelationData(BaseModel, validate_assignment=True):
         return self
 
     @classmethod
-    def read(cls, relation_data: RelationDataContent) -> Self:
+    def read(cls, relation_data: MutableMapping[str, str]) -> Self:
         """Read data from a relation databag and parse it into a domain object.
 
         Args:

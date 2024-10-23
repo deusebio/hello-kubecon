@@ -15,13 +15,11 @@ from abc import abstractmethod
 
 class BaseSerializer:
 
-    @classmethod
-    def serialize(cls, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
+    def serialize(self, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
         """Return the serialized version of the key and value."""
         pass
 
-    @classmethod
-    def deserialize(cls, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
+    def deserialize(self, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
         """Return the deserialized version for a given key in the data, according to the specification. """
         pass
 
@@ -49,8 +47,7 @@ class DictSerializer(BaseSerializer):
         else:
             raise ValueError(f"type {type(item)} not recognized")
 
-    @classmethod
-    def serialize(cls, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
+    def serialize(self, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
         """Serialize the key, value pair."""
         if (
                 isinstance(value, str) or
@@ -59,7 +56,7 @@ class DictSerializer(BaseSerializer):
         ):
             serialized_value = str(value)
         elif isinstance(value, BaseModel) or isinstance(value, dict) or isinstance(value, list):
-            serialized_value = cls.dump(DictSerializer._to_raw(value))
+            serialized_value = self.dump(self._to_raw(value))
         else:
             raise ValueError(f"Type of value {type(value)} not serializable")
 
@@ -68,13 +65,12 @@ class DictSerializer(BaseSerializer):
             serialized_value
         )
 
-    @classmethod
-    def deserialize(cls, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
+    def deserialize(self, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
         parsed_key = key.replace("_", "-")
         if parsed_key not in data:
             return None
         value = data[parsed_key]
-        return cls.load(value) if field_info.annotation not in (str, int) else str(value)
+        return self.load(value) if field_info.annotation not in (str, int) else str(value)
 
 
 class JsonSerializer(DictSerializer):
@@ -95,3 +91,46 @@ class YamlSerializer(DictSerializer):
     @classmethod
     def load(cls, raw: str) -> Union[dict, list]:
         return yaml.safe_load(raw)
+
+
+# from ops import Model
+#
+# class SecretWrapper(BaseSerializer):
+#
+#     def __init__(
+#         self, serializer: DictSerializer, model: Model, secrets: dict[str, str]
+#     ):
+#         self.serializer = serializer
+#         self.model = model
+#         self.secrets = secrets
+#
+#     def serialize(self, name: str, value: Union[NativeTypes, BaseModel, dict, list]) -> Tuple[str, str]:
+#         """Return the serialized version of the key and value."""
+#         field_name, content =  self.serializer.serialize(name, value)
+#
+#         pass
+#
+#     def deserialize(cls, data: Mapping[str, str], key: str, field_info: FieldInfo) -> Optional[NativeTypes]:
+#         """Return the deserialized version for a given key in the data, according to the specification. """
+#         pass
+#
+#
+#     def dump(self, obj: dict | list) -> str:
+#         content =  self.serializer.dump(obj, default=pydantic_encoder)
+#         # write content to secret
+#
+#     def load(self, raw: str) -> dict | list:
+#         return yaml.loads(raw)
+#
+#     @classmethod
+#     def from_data_content(cls, data_content: Mapping[[str, str], key_secrets: list[str]):
+#         # read secrets id
+#         pass
+#
+# class Protocol:
+#     serializer: Serializer
+#     data: RelationDataContent
+#
+
+
+
